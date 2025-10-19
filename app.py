@@ -72,7 +72,7 @@ with st.sidebar:
     st.header("Settings")
 
     # API Key input
-    api_key = st.text_input(
+    api_key_input = st.text_input(
         "🔑 Enter your OpenRouter API Key",
         type="password",
         help="Get your key from https://openrouter.ai/"
@@ -104,7 +104,7 @@ for msg in st.session_state.messages:
 
 # --- Main Chat Functionality ---
 # Only proceed if both API key and the PDF file exist
-if api_key and os.path.exists(PDF_PATH):
+if api_key_input and os.path.exists(PDF_PATH):
     vector_db = process_pdf(PDF_PATH)
 
     if vector_db:
@@ -122,12 +122,13 @@ if api_key and os.path.exists(PDF_PATH):
                             memory = ConversationBufferMemory(
                                 memory_key="chat_history", return_messages=True
                             )
+                            # CORRECTED INITIALIZATION: Using modern 'base_url' and 'api_key' parameters
                             llm = ChatOpenAI(
                                 model="openai/gpt-3.5-turbo",
                                 temperature=0.2,
-                                openai_api_base="https://openrouter.ai/api/v1",
+                                base_url="https://openrouter.ai/api/v1",
                                 max_tokens=700,
-                                openai_api_key=api_key
+                                api_key=api_key_input
                             )
                             st.session_state.qa_chain = ConversationalRetrievalChain.from_llm(
                                 llm=llm,
@@ -146,6 +147,6 @@ if api_key and os.path.exists(PDF_PATH):
                         st.error(f"⚠️ An error occurred while getting the answer: {e}")
 
 # Handle cases where prerequisites are not met
-elif not api_key:
+elif not api_key_input:
     st.warning("Please enter your OpenRouter API key in the sidebar to start the chat.")
 
