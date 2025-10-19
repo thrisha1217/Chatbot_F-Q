@@ -1,17 +1,17 @@
 import streamlit as st
 import os
-import langchain
-import sys
-st.write("LangChain version:", langchain.__version__)
-
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitters import RecursiveCharacterTextSplitter
+# CORRECTED IMPORT: This module is now in its own package
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.memory import ConversationBufferMemory
-from langchain_community.chat_models import ChatOpenAI
+# CORRECTED IMPORT: This module is now in its own package
+from langchain_openai import ChatOpenAI
 from langchain.chains import ConversationalRetrievalChain
-from langchain.schema import Document
+# CORRECTED IMPORT: This module is now in its own package
+from langchain_core.documents import Document
+import tempfile
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -20,18 +20,20 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- File Path ---
-PDF_PATH = "D:/SEM-VII/NLP/Assigment/RIL-IAR-2025.pdf"
-
 # --- PDF Processing Function ---
 @st.cache_resource
-def process_pdf(file_path):
-    """Load, split, embed, and index the Reliance Annual Report PDF."""
+def process_pdf(uploaded_file):
+    """Load, split, embed, and index a PDF file."""
     try:
-        st.info("📄 Loading and processing the Reliance Annual Report...")
+        # Use a temporary file to handle the uploaded data
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            tmp_file_path = tmp_file.name
+
+        st.info(f"📄 Loading and processing '{uploaded_file.name}'...")
 
         # Load PDF
-        loader = PyPDFLoader(file_path)
+        loader = PyPDFLoader(tmp_file_path)
         pages = loader.load_and_split()
 
         # Split into chunks
@@ -54,6 +56,9 @@ def process_pdf(file_path):
             documents,
             embedding=embeddings
         )
+        
+        # Clean up the temporary file
+        os.unlink(tmp_file_path)
 
         st.success("✅ PDF processed successfully! Ready for questions.")
         return vector_db
@@ -66,7 +71,7 @@ def process_pdf(file_path):
 # --- App UI ---
 st.title("📊 Chat with Reliance Annual Report 2024–25")
 st.markdown("""
-Ask questions about Reliance Industries Limited’s **Integrated Annual Report (FY 2024–25)**.  
+Ask questions about any uploaded PDF, such as the **Reliance Industries Limited Integrated Annual Report**.  
 The app uses OpenRouter’s GPT-3.5 model to generate answers directly from the PDF content.
 """)
 
@@ -79,28 +84,26 @@ with st.sidebar:
         type="password",
         help="Get your free key from https://openrouter.ai/"
     )
-
-    st.markdown("---")
-    st.markdown(f"**Using File:** `{os.path.basename(PDF_PATH)}`")
-
-    if not os.path.exists(PDF_PATH):
-        st.error("❌ Reliance PDF not found. Please check the path.")
-    else:
-        st.success("✅ Reliance PDF found and ready.")
+    
+    # CORRECTED LOGIC: Use a file uploader instead of a hardcoded path
+    uploaded_file = st.file_uploader(
+        "Upload your PDF Report",
+        type="pdf"
+    )
 
     st.markdown("---")
     st.markdown("""
     **How to Use:**
     1. Enter your OpenRouter API key.
-    2. Ask questions about the annual report.
-    3. Type naturally — I’ll extract answers from the report!
+    2. Upload the PDF you want to chat with.
+    3. Ask questions about the report!
     """)
 
 # --- Chat History Initialization ---
 if "messages" not in st.session_state:
     st.session_state.messages = [{
         "role": "assistant",
-        "content": "Hello 👋! Ask me anything about Reliance Industries’ Integrated Annual Report 2024–25."
+        "content": "Hello 👋! Please enter your API key and upload a PDF to begin."
     }]
 
 # --- Display Chat History ---
@@ -109,11 +112,11 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 # --- Main Chat Functionality ---
-if api_key and os.path.exists(PDF_PATH):
-    vector_db = process_pdf(PDF_PATH)
+if api_key and uploaded_file:
+    vector_db = process_pdf(uploaded_file)
 
     if vector_db:
-        if prompt := st.chat_input("Ask a question about the Reliance Annual Report..."):
+        if prompt := st.chat_input("Ask a question about the report..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
@@ -141,7 +144,7 @@ if api_key and os.path.exists(PDF_PATH):
                             memory=memory
                         )
 
-                        result = qa_chain({"question": prompt})
+                        result = qa_chain.invoke({"question": prompt})
                         response = result["answer"]
 
                         st.markdown(response)
@@ -149,7 +152,8 @@ if api_key and os.path.exists(PDF_PATH):
 
                     except Exception as e:
                         st.error(f"⚠️ Error: {e}")
-else:
+elif not api_key and uploaded_file:
     st.warning("Please enter your OpenRouter API key to start chatting.")
-
+elif api_key and not uploaded_file:
+    st.info("Please upload a PDF to begin.")
 
