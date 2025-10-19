@@ -14,26 +14,25 @@ from langchain_core.documents import Document
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Chat with Your PDF",
+    page_title="Chat with RIL Annual Report",
     page_icon="📄",
     layout="wide"
 )
 
-# --- PDF Processing Function ---
-# This function is cached to avoid reprocessing the PDF on every interaction
-@st.cache_resource
-def process_pdf(uploaded_file):
-    """Load, split, embed, and index a PDF file."""
-    try:
-        # Use a temporary file to handle the uploaded data securely
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-            tmp_file.write(uploaded_file.getvalue())
-            tmp_file_path = tmp_file.name
+# --- Hardcoded File Path ---
+# The app will look for this specific PDF file.
+PDF_PATH = "RIL-IAR-2025.pdf"
 
-        st.info(f"📄 Loading and processing '{uploaded_file.name}'...")
+# --- PDF Processing Function ---
+# This function is cached to avoid reprocessing the PDF on every app run.
+@st.cache_resource
+def process_pdf(file_path):
+    """Load, split, embed, and index the specified PDF file."""
+    try:
+        st.info(f"📄 Loading and processing '{os.path.basename(file_path)}'...")
 
         # 1. Load the PDF document
-        loader = PyPDFLoader(tmp_file_path)
+        loader = PyPDFLoader(file_path)
         pages = loader.load_and_split()
 
         # 2. Split the document into smaller chunks
@@ -45,7 +44,7 @@ def process_pdf(uploaded_file):
         documents = text_splitter.split_documents(pages)
 
         # 3. Create text embeddings
-        st.info("Creating text embeddings and vector store... (This might take a moment)")
+        st.info("Creating text embeddings... (This may take a moment on first run)")
         embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'}
@@ -57,10 +56,7 @@ def process_pdf(uploaded_file):
             embedding=embeddings
         )
         
-        # 5. Clean up the temporary file
-        os.unlink(tmp_file_path)
-
-        st.success("✅ PDF processed successfully! Ready for questions.")
+        st.success("✅ Report processed successfully! Ready for your questions.")
         return vector_db
 
     except Exception as e:
@@ -68,11 +64,8 @@ def process_pdf(uploaded_file):
         return None
 
 # --- App UI ---
-st.title("📄 Chat with Your PDF")
-st.markdown("""
-This app allows you to ask questions about any PDF document you upload. 
-It uses an AI model to find and generate answers directly from the document's content.
-""")
+st.title("📊 Chat with the Reliance Annual Report 2024-25")
+st.markdown("Ask questions about Reliance Industries Limited’s latest Integrated Annual Report.")
 
 # --- Sidebar Configuration ---
 with st.sidebar:
@@ -85,20 +78,23 @@ with st.sidebar:
         help="Get your key from https://openrouter.ai/"
     )
     
-    # File uploader for the PDF
-    uploaded_file = st.file_uploader(
-        "Upload your PDF Report",
-        type="pdf"
-    )
-
     st.markdown("---")
-    st.info("How to Use:\n1. Enter your API key.\n2. Upload a PDF.\n3. Ask questions!")
+    
+    # Check if the hardcoded PDF exists
+    if not os.path.exists(PDF_PATH):
+        st.error(f"❌ '{PDF_PATH}' not found!")
+        st.error("Please make sure the PDF file is in the same directory as the app.")
+    else:
+        st.success(f"✅ Found '{os.path.basename(PDF_PATH)}'.")
+    
+    st.markdown("---")
+    st.info("How to Use:\n1. Enter your API key.\n2. The RIL report is loaded automatically.\n3. Ask questions in the chat!")
 
 # --- Chat History Initialization ---
 if "messages" not in st.session_state:
     st.session_state.messages = [{
         "role": "assistant",
-        "content": "Hello! Please enter your API key and upload a PDF to begin chatting."
+        "content": "Hello! Please enter your API key to begin asking questions about the RIL Annual Report."
     }]
 
 # --- Display Chat History ---
@@ -107,50 +103,49 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 # --- Main Chat Functionality ---
-# Only proceed if both API key and a file are provided
-if api_key and uploaded_file:
-    vector_db = process_pdf(uploaded_file)
+# Only proceed if both API key and the PDF file exist
+if api_key and os.path.exists(PDF_PATH):
+    vector_db = process_pdf(PDF_PATH)
 
     if vector_db:
         # Chat input box appears only after PDF is processed
-        if prompt := st.chat_input("Ask a question about the document..."):
+        if prompt := st.chat_input("Ask a question about the RIL report..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
 
             with st.chat_message("assistant"):
-                with st.spinner("Analyzing the document..."):
+                with st.spinner("Searching the report and generating an answer..."):
                     try:
-                        # Initialize memory and the QA chain
-                        memory = ConversationBufferMemory(
-                            memory_key="chat_history", return_messages=True
-                        )
-                        llm = ChatOpenAI(
-                            model="openai/gpt-3.5-turbo",
-                            temperature=0.2,
-                            openai_api_base="https://openrouter.ai/api/v1",
-                            max_tokens=700,
-                            openai_api_key=api_key
-                        )
-                        qa_chain = ConversationalRetrievalChain.from_llm(
-                            llm=llm,
-                            retriever=vector_db.as_retriever(search_kwargs={"k": 3}),
-                            memory=memory
-                        )
+                        # Initialize memory and the QA chain if not already in session state
+                        if 'qa_chain' not in st.session_state:
+                            memory = ConversationBufferMemory(
+                                memory_key="chat_history", return_messages=True
+                            )
+                            llm = ChatOpenAI(
+                                model="openai/gpt-3.5-turbo",
+                                temperature=0.2,
+                                openai_api_base="https://openrouter.ai/api/v1",
+                                max_tokens=700,
+                                openai_api_key=api_key
+                            )
+                            st.session_state.qa_chain = ConversationalRetrievalChain.from_llm(
+                                llm=llm,
+                                retriever=vector_db.as_retriever(search_kwargs={"k": 3}),
+                                memory=memory
+                            )
 
                         # Get the answer
-                        result = qa_chain.invoke({"question": prompt})
+                        result = st.session_state.qa_chain.invoke({"question": prompt})
                         response = result["answer"]
 
                         st.markdown(response)
                         st.session_state.messages.append({"role": "assistant", "content": response})
 
                     except Exception as e:
-                        st.error(f"⚠️ An error occurred: {e}")
+                        st.error(f"⚠️ An error occurred while getting the answer: {e}")
 
 # Handle cases where prerequisites are not met
-elif not api_key and uploaded_file:
-    st.warning("Please enter your OpenRouter API key to start chatting.")
-elif api_key and not uploaded_file:
-    st.info("Please upload a PDF to begin.")
+elif not api_key:
+    st.warning("Please enter your OpenRouter API key in the sidebar to start the chat.")
 
