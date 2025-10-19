@@ -10,6 +10,8 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
+api_key = "your_openrouter_api_key_here"  # <-- Replace this line with your API key
+
 
 # ---------------------- CACHED BACKEND FUNCTIONS ----------------------
 
@@ -191,3 +193,4 @@ if user_question := st.chat_input("Ask a question about your document..."):
 elif not st.session_state.chat_history:
      # Initial welcome message if no history
     st.info("Upload a PDF in the sidebar to get started!")
+
