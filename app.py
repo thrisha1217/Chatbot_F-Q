@@ -5,7 +5,7 @@ import tempfile
 # These are the correct, modern imports for the langchain library
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.memory import ConversationBufferMemory
 from langchain_openai import ChatOpenAI
@@ -150,5 +150,6 @@ if api_key_input and os.path.exists(PDF_PATH):
 # Handle cases where prerequisites are not met
 elif not api_key_input:
     st.warning("Please enter your OpenRouter API key in the sidebar to start the chat.")
+
 
 
