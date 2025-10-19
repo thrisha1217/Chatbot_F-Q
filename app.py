@@ -118,7 +118,8 @@ if api_key_input and os.path.exists(PDF_PATH):
                 with st.spinner("Searching the report and generating an answer..."):
                     try:
                         # Initialize memory and the QA chain if not already in session state
-                        if 'qa_chain' not in st.session_state:
+                        if 'qa_chain' not in st.session_state or st.session_state.api_key != api_key_input:
+                            st.session_state.api_key = api_key_input
                             memory = ConversationBufferMemory(
                                 memory_key="chat_history", return_messages=True
                             )
