@@ -1,6 +1,5 @@
 import os
 import streamlit as st
-from dotenv import load_dotenv
 import tempfile
 
 from langchain_community.document_loaders import PyPDFLoader
@@ -10,7 +9,6 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
-
 
 # ---------------------- CACHED BACKEND FUNCTIONS ----------------------
 
@@ -112,11 +110,6 @@ st.set_page_config(
     page_icon="🤖"
 )
 
-# --- ENV & API KEY ---
-load_dotenv()
-api_key = "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"  # <-- Replace this line with your API key
-
-
 # --- SESSION STATE ---
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -130,11 +123,17 @@ with st.sidebar:
     
     uploaded_file = st.file_uploader("📤 Upload a PDF file", type=["pdf"])
     
-    if not api_key:
-        st.warning("⚠️ Please set your OPENROUTER_API_KEY in a `.env` file.")
+    api_key = st.text_input(
+        "🔑 Enter your OpenRouter API Key",
+        type="password",
+        help="Get your free key from https://openrouter.ai/"
+    )
+    
+    if api_key:
+        st.success("✅ API key entered!")
     else:
-        st.success("✅ API key found!")
-        
+        st.warning("⚠️ Please enter your OpenRouter API key to start chatting.")
+    
     if st.button("🗑️ Clear Chat & Reset"):
         st.session_state.chat_history = []
         st.session_state.vector_db = None
@@ -160,7 +159,7 @@ for role, msg in st.session_state.chat_history:
 # Chat input
 if user_question := st.chat_input("Ask a question about your document..."):
     if not api_key:
-        st.warning("Please add your API key in the sidebar to chat.")
+        st.warning("Please enter your OpenRouter API key in the sidebar to chat.")
         st.stop()
     
     if st.session_state.vector_db is None:
@@ -193,6 +192,3 @@ if user_question := st.chat_input("Ask a question about your document..."):
 elif not st.session_state.chat_history:
      # Initial welcome message if no history
     st.info("Upload a PDF in the sidebar to get started!")
-
-
-
