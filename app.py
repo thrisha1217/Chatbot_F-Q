@@ -1,155 +1,193 @@
-import streamlit as st
 import os
+import streamlit as st
+from dotenv import load_dotenv
 import tempfile
 
-# These are the correct, modern imports for the langchain library
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain.memory import ConversationBufferMemory
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
-from langchain.chains import ConversationalRetrievalChain
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 
-# --- Page Configuration ---
-st.set_page_config(
-    page_title="Chat with RIL Annual Report",
-    page_icon="📄",
-    layout="wide"
-)
+# ---------------------- CACHED BACKEND FUNCTIONS ----------------------
 
-# --- Hardcoded File Path ---
-# The app will look for this specific PDF file.
-PDF_PATH = "RIL-IAR-2025.pdf"
-
-# --- PDF Processing Function ---
-# This function is cached to avoid reprocessing the PDF on every app run.
-@st.cache_resource
-def process_pdf(file_path):
-    """Load, split, embed, and index the specified PDF file."""
+@st.cache_resource(show_spinner="🔍 Processing your document...")
+def create_vector_db(uploaded_file):
+    """Creates a Chroma vector database from the uploaded PDF file."""
+    # Use tempfile to save uploaded file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        tmp_file.write(uploaded_file.read())
+        tmp_path = tmp_file.name
+    
     try:
-        st.info(f"📄 Loading and processing '{os.path.basename(file_path)}'...")
-
-        # 1. Load the PDF document
-        loader = PyPDFLoader(file_path)
+        # Load & Split
+        loader = PyPDFLoader(tmp_path)
         pages = loader.load_and_split()
-
-        # 2. Split the document into smaller chunks
+        
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200,
             length_function=len
         )
-        documents = text_splitter.split_documents(pages)
-
-        # 3. Create text embeddings
-        st.info("Creating text embeddings... (This may take a moment on first run)")
+        docs = text_splitter.split_documents(pages)
+        documents = [Document(page_content=doc.page_content) for doc in docs]
+        
+        # Create Embeddings
         embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'}
         )
-
-        # 4. Create a Chroma vector store to index the embeddings
-        vector_db = Chroma.from_documents(
-            documents,
-            embedding=embeddings
-        )
         
-        st.success("✅ Report processed successfully! Ready for your questions.")
+        # Create Vector DB
+        vector_db = Chroma.from_documents(documents, embedding=embeddings)
         return vector_db
+    
+    finally:
+        # Clean up temp file
+        os.unlink(tmp_path)
 
-    except Exception as e:
-        st.error(f"An error occurred while processing the PDF: {e}")
-        return None
+@st.cache_resource
+def get_llm(api_key):
+    """Initializes and returns the ChatOpenAI LLM."""
+    return ChatOpenAI(
+        model="openai/gpt-3.5-turbo",
+        temperature=0.2,
+        base_url="https://openrouter.ai/api/v1",
+        max_tokens=500,
+        api_key=api_key
+    )
 
-# --- App UI ---
-st.title("📊 Chat with the Reliance Annual Report 2024-25")
-st.markdown("Ask questions about Reliance Industries Limited’s latest Integrated Annual Report.")
+def get_response(llm, retriever, chat_history, question):
+    """Generates a response using the RAG pipeline."""
+    # Create RAG prompt template
+    template = """You are an assistant for question-answering tasks. 
+Use the following pieces of retrieved context to answer the question. 
+If you don't know the answer, just say that you don't know. 
+Keep the answer concise and relevant.
 
-# --- Sidebar Configuration ---
-with st.sidebar:
-    st.header("Settings")
+Context: {context}
 
-    # API Key input
-    api_key_input = st.text_input(
-        "🔑 Enter your OpenRouter API Key",
-        type="password",
-        help="Get your key from https://openrouter.ai/"
+Chat History: {chat_history}
+
+Question: {question}
+
+Answer:"""
+    prompt_template = ChatPromptTemplate.from_template(template)
+
+    # Format chat history (using "user" and "assistant" roles)
+    chat_history_text = "No previous conversation."
+    if chat_history:
+        formatted = []
+        for role, msg in chat_history[-6:]:  # Last 3 exchanges
+            formatted.append(f"{role.capitalize()}: {msg}")
+        chat_history_text = "\n".join(formatted)
+
+    # Retrieve relevant documents
+    relevant_docs = retriever.invoke(question)
+    
+    def format_docs(docs):
+        return "\n\n".join(doc.page_content for doc in docs)
+    context = format_docs(relevant_docs)
+    
+    # Format the prompt
+    formatted_prompt = prompt_template.format(
+        context=context,
+        chat_history=chat_history_text,
+        question=question
     )
     
-    st.markdown("---")
+    # Get response from LLM
+    answer = llm.invoke(formatted_prompt).content
+    return answer
+
+# ---------------------- MAIN APP UI ----------------------
+
+# --- PAGE CONFIG ---
+st.set_page_config(
+    page_title="📄 Smart PDF Chatbot",
+    layout="wide",
+    page_icon="🤖"
+)
+
+# --- ENV & API KEY ---
+load_dotenv()
+api_key = os.getenv("OPENROUTER_API_KEY")
+
+# --- SESSION STATE ---
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "vector_db" not in st.session_state:
+    st.session_state.vector_db = None
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.title("📚 PDF Q&A")
+    st.markdown("Upload a PDF document and chat with it instantly!")
     
-    # Check if the hardcoded PDF exists
-    if not os.path.exists(PDF_PATH):
-        st.error(f"❌ '{PDF_PATH}' not found!")
-        st.error("Please make sure the PDF file is in the same directory as the app.")
+    uploaded_file = st.file_uploader("📤 Upload a PDF file", type=["pdf"])
+    
+    if not api_key:
+        st.warning("⚠️ Please set your OPENROUTER_API_KEY in a `.env` file.")
     else:
-        st.success(f"✅ Found '{os.path.basename(PDF_PATH)}'.")
+        st.success("✅ API key found!")
+        
+    if st.button("🗑️ Clear Chat & Reset"):
+        st.session_state.chat_history = []
+        st.session_state.vector_db = None
+        # Clear the cache for the vector DB
+        create_vector_db.clear()
+        st.rerun()
+
+# --- MAIN CHAT AREA ---
+st.title("🤖 AI-Powered PDF Chatbot")
+
+# Handle file upload logic
+if uploaded_file:
+    # This will only run if the file is new, thanks to caching
+    if st.session_state.vector_db is None:
+        st.session_state.vector_db = create_vector_db(uploaded_file)
+        st.success("✅ Document processed! Ready to chat.")
+
+# Display chat history
+for role, msg in st.session_state.chat_history:
+    with st.chat_message(role):
+        st.markdown(msg)
+
+# Chat input
+if user_question := st.chat_input("Ask a question about your document..."):
+    if not api_key:
+        st.warning("Please add your API key in the sidebar to chat.")
+        st.stop()
     
-    st.markdown("---")
-    st.info("How to Use:\n1. Enter your API key.\n2. The RIL report is loaded automatically.\n3. Ask questions in the chat!")
+    if st.session_state.vector_db is None:
+        st.warning("Please upload a PDF file first.")
+        st.stop()
 
-# --- Chat History Initialization ---
-if "messages" not in st.session_state:
-    st.session_state.messages = [{
-        "role": "assistant",
-        "content": "Hello! Please enter your API key to begin asking questions about the RIL Annual Report."
-    }]
+    # Add user message to history and display
+    st.session_state.chat_history.append(("user", user_question))
+    with st.chat_message("user"):
+        st.markdown(user_question)
 
-# --- Display Chat History ---
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+    # Get bot response
+    with st.chat_message("assistant"):
+        with st.spinner("🤔 Thinking..."):
+            llm = get_llm(api_key)
+            retriever = st.session_state.vector_db.as_retriever(search_kwargs={"k": 3})
+            
+            answer = get_response(
+                llm, 
+                retriever, 
+                st.session_state.chat_history, 
+                user_question
+            )
+            
+            st.markdown(answer)
+    
+    # Add bot response to history
+    st.session_state.chat_history.append(("assistant", answer))
 
-# --- Main Chat Functionality ---
-# Only proceed if both API key and the PDF file exist
-if api_key_input and os.path.exists(PDF_PATH):
-    vector_db = process_pdf(PDF_PATH)
-
-    if vector_db:
-        # Chat input box appears only after PDF is processed
-        if prompt := st.chat_input("Ask a question about the RIL report..."):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            with st.chat_message("assistant"):
-                with st.spinner("Searching the report and generating an answer..."):
-                    try:
-                        # Initialize memory and the QA chain if not already in session state
-                        if 'qa_chain' not in st.session_state or st.session_state.api_key != api_key_input:
-                            st.session_state.api_key = api_key_input
-                            memory = ConversationBufferMemory(
-                                memory_key="chat_history", return_messages=True
-                            )
-                            # CORRECTED INITIALIZATION: Using modern 'base_url' and 'api_key' parameters
-                            llm = ChatOpenAI(
-                                model="openai/gpt-3.5-turbo",
-                                temperature=0.2,
-                                base_url="https://openrouter.ai/api/v1",
-                                max_tokens=700,
-                                api_key=api_key_input
-                            )
-                            st.session_state.qa_chain = ConversationalRetrievalChain.from_llm(
-                                llm=llm,
-                                retriever=vector_db.as_retriever(search_kwargs={"k": 3}),
-                                memory=memory
-                            )
-
-                        # Get the answer
-                        result = st.session_state.qa_chain.invoke({"question": prompt})
-                        response = result["answer"]
-
-                        st.markdown(response)
-                        st.session_state.messages.append({"role": "assistant", "content": response})
-
-                    except Exception as e:
-                        st.error(f"⚠️ An error occurred while getting the answer: {e}")
-
-# Handle cases where prerequisites are not met
-elif not api_key_input:
-    st.warning("Please enter your OpenRouter API key in the sidebar to start the chat.")
-
-
-
+elif not st.session_state.chat_history:
+     # Initial welcome message if no history
+    st.info("Upload a PDF in the sidebar to get started!")
