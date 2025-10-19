@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.memory import ConversationBufferMemory
@@ -147,3 +147,4 @@ if api_key and os.path.exists(PDF_PATH):
                         st.error(f"⚠️ Error: {e}")
 else:
     st.warning("Please enter your OpenRouter API key to start chatting.")
+
