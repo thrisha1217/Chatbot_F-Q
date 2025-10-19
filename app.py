@@ -5,6 +5,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
+# CORRECTED IMPORT: This module is now in the base langchain package
 from langchain.memory import ConversationBufferMemory
 # CORRECTED IMPORT: This module is now in its own package
 from langchain_openai import ChatOpenAI
@@ -15,8 +16,8 @@ import tempfile
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Chat with Reliance Annual Report 2024–25",
-    page_icon="📊",
+    page_title="Chat with any PDF",
+    page_icon="📄",
     layout="wide"
 )
 
@@ -46,6 +47,7 @@ def process_pdf(uploaded_file):
         documents = [Document(page_content=doc.page_content) for doc in docs]
 
         # Create embeddings
+        st.info("Creating text embeddings and vector store...")
         embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'}
@@ -64,14 +66,14 @@ def process_pdf(uploaded_file):
         return vector_db
 
     except Exception as e:
-        st.error(f"Error while processing PDF: {e}")
+        st.error(f"An error occurred while processing the PDF: {e}")
         return None
 
 
 # --- App UI ---
-st.title("📊 Chat with Reliance Annual Report 2024–25")
+st.title("📄 Chat with Your PDF")
 st.markdown("""
-Ask questions about any uploaded PDF, such as the **Reliance Industries Limited Integrated Annual Report**.  
+Ask questions about any uploaded PDF.
 The app uses OpenRouter’s GPT-3.5 model to generate answers directly from the PDF content.
 """)
 
@@ -82,10 +84,9 @@ with st.sidebar:
     api_key = st.text_input(
         "🔑 Enter your OpenRouter API Key",
         type="password",
-        help="Get your free key from https://openrouter.ai/"
+        help="Get your key from https://openrouter.ai/"
     )
     
-    # CORRECTED LOGIC: Use a file uploader instead of a hardcoded path
     uploaded_file = st.file_uploader(
         "Upload your PDF Report",
         type="pdf"
@@ -96,14 +97,14 @@ with st.sidebar:
     **How to Use:**
     1. Enter your OpenRouter API key.
     2. Upload the PDF you want to chat with.
-    3. Ask questions about the report!
+    3. Ask questions in the chat window!
     """)
 
 # --- Chat History Initialization ---
 if "messages" not in st.session_state:
     st.session_state.messages = [{
         "role": "assistant",
-        "content": "Hello 👋! Please enter your API key and upload a PDF to begin."
+        "content": "Hello! Please enter your API key and upload a PDF to begin."
     }]
 
 # --- Display Chat History ---
