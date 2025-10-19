@@ -1,13 +1,5 @@
 streamlit
 langchain
-langchain-community
-langchain-openai
-langchain-core
-langchain-text-splitters
 chromadb
-pypdf
 sentence-transformers
 openai
-python-dotenv
-tiktoken
-protobuf>=5.26.1
