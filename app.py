@@ -1,5 +1,9 @@
 import streamlit as st
 import os
+import langchain
+import sys
+st.write("LangChain version:", langchain.__version__)
+
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -147,4 +151,5 @@ if api_key and os.path.exists(PDF_PATH):
                         st.error(f"⚠️ Error: {e}")
 else:
     st.warning("Please enter your OpenRouter API key to start chatting.")
+
 
