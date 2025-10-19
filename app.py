@@ -114,7 +114,7 @@ st.set_page_config(
 
 # --- ENV & API KEY ---
 load_dotenv()
-api_key = "your_openrouter_api_key_here"  # <-- Replace this line with your API key
+api_key = "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"  # <-- Replace this line with your API key
 
 
 # --- SESSION STATE ---
@@ -193,5 +193,6 @@ if user_question := st.chat_input("Ask a question about your document..."):
 elif not st.session_state.chat_history:
      # Initial welcome message if no history
     st.info("Upload a PDF in the sidebar to get started!")
+
 
 
